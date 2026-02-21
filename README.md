@@ -5,6 +5,7 @@ A lightweight Flask web dashboard for real-time monitoring of your **Raspberry P
 ![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python)
 ![Flask](https://img.shields.io/badge/Flask-2.x-green?logo=flask)
 ![Platform](https://img.shields.io/badge/Platform-Raspberry%20Pi%205-red?logo=raspberry-pi)
+![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
 
 ---
 
@@ -106,10 +107,31 @@ Returns current sensor readings as JSON:
 
 ```
 rpi5-cooling-dashboard/
-├── app.py          # Main Flask application with embedded HTML template
-├── .gitignore      # Python gitignore
-└── README.md       # This file
+├── app.py                              # Main Flask application with embedded HTML template
+├── .gitignore                          # Python gitignore
+├── CONTRIBUTING.md                     # How to contribute
+├── .github/
+│   └── PULL_REQUEST_TEMPLATE.md        # PR form template for contributors
+└── README.md                           # This file
 ```
+
+---
+
+## Contributing
+
+Contributions are welcome! This project is open to everyone.
+
+**To use it as-is:** just clone and run — no sign-up needed.
+
+**To propose a feature or fix:**
+1. Fork this repo
+2. Create a branch: `git checkout -b feature/your-feature`
+3. Commit your changes with a clear message
+4. Push and open a Pull Request against `main`
+
+All PRs must go through review before merging into `main` (branch protection is enabled).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full step-by-step guide, branch naming conventions, commit prefixes, and a list of feature ideas.
 
 ---
 
