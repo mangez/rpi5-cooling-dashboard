@@ -1,6 +1,7 @@
 from flask import Flask, render_template_string, jsonify
 import glob
 from datetime import datetime
+import psutil
 
 app = Flask(__name__)
 
@@ -21,9 +22,16 @@ def get_stats():
         except Exception:
             pass
 
+    # New Metrics
+    cpu_usage = psutil.cpu_percent(interval=None)
+    memory = psutil.virtual_memory()
+    ram_usage = memory.percent
+
     return {
         'temp': temp,
         'fan_rpm': fan_rpm,
+        'cpu_usage': cpu_usage,
+        'ram_usage': ram_usage,
         'timestamp': datetime.now().astimezone().strftime('%H:%M:%S %Z'),
         'status_temp': 'Normal' if temp < 70 else 'Warning' if temp < 80 else 'Critical',
         'status_fan': 'Idle' if fan_rpm == 0 else 'Running'
@@ -47,6 +55,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
     <title>🐧 Raspberry Pi 5 Cooling Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -61,185 +70,217 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         align-items: center; justify-content: center; gap: 15px;
     }
     .metrics-grid {
-        display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-        gap: 30px; margin-bottom: 40px;
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px; margin-bottom: 30px;
     }
     .metric-card {
         background: rgba(255,255,255,0.95); border-radius: 20px;
-        padding: 35px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.05);
         border-left: 6px solid #dee2e6; backdrop-filter: blur(10px);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        transition: transform 0.2s ease;
     }
-    .metric-card:hover { transform: translateY(-5px); box-shadow: 0 20px 40px rgba(0,0,0,0.15); }
+    .metric-card:hover { transform: translateY(-3px); }
     .metric-critical { border-left-color: #e74c3c; }
     .metric-warning { border-left-color: #f39c12; }
     .metric-normal { border-left-color: #27ae60; }
-    .metric-header {
-        display: flex; align-items: center; gap: 15px; margin-bottom: 20px;
-    }
+    .metric-header { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; }
     .metric-icon {
-        width: 60px; height: 60px; border-radius: 15px;
+        width: 45px; height: 45px; border-radius: 12px;
         display: flex; align-items: center; justify-content: center;
-        font-size: 1.8rem; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        font-size: 1.4rem; color: white;
     }
     .icon-temp { background: linear-gradient(135deg, #e74c3c, #c0392b); }
     .icon-fan { background: linear-gradient(135deg, #3498db, #2980b9); }
-    .metric-title { font-size: 1.3rem; color: #2c3e50; font-weight: 600; }
+    .icon-cpu { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
+    .icon-ram { background: linear-gradient(135deg, #f1c40f, #f39c12); }
+    .metric-title { font-size: 1.1rem; color: #2c3e50; font-weight: 600; }
     .metric-value {
-        font-size: 4rem; font-weight: 800; line-height: 1;
-        margin-bottom: 10px; font-variant-numeric: tabular-nums;
+        font-size: 2.5rem; font-weight: 800; line-height: 1.2;
+        margin-bottom: 5px; font-variant-numeric: tabular-nums;
     }
     .temp-value { color: #e74c3c; }
     .fan-value { color: #3498db; }
-    .metric-label { font-size: 1.2rem; color: #7f8c8d; margin-bottom: 8px; }
+    .cpu-value { color: #9b59b6; }
+    .ram-value { color: #f39c12; }
     .metric-status {
-        font-size: 1rem; font-weight: 600; padding: 8px 16px;
-        border-radius: 25px; display: inline-flex; align-items: center; gap: 6px;
+        font-size: 0.85rem; font-weight: 600; padding: 4px 12px;
+        border-radius: 20px; display: inline-flex; align-items: center; gap: 5px;
     }
     .status-normal { background: #d5f4e6; color: #27ae60; }
     .status-warning { background: #fef5d6; color: #f39c12; }
     .status-critical { background: #fadbd8; color: #e74c3c; }
-    .status-idle { background: #ecf0f1; color: #95a5a6; }
-    .status-running { background: #d6eaf8; color: #3498db; }
-    .chart-section {
+    .chart-container {
         background: rgba(255,255,255,0.95); border-radius: 20px;
-        padding: 35px; margin-bottom: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-        backdrop-filter: blur(10px);
+        padding: 25px; margin-bottom: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.05);
     }
-    .section-header {
-        display: flex; align-items: center; gap: 12px;
-        margin-bottom: 25px; color: #2c3e50; font-size: 1.4rem; font-weight: 600;
+    .chart-header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; font-weight: 600; color: #2c3e50; }
+    .readings-section {
+        background: rgba(255,255,255,0.95); border-radius: 20px;
+        padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.05);
     }
-    table { width: 100%; border-collapse: collapse; }
-    th, td {
-        padding: 16px 20px; text-align: left; border-bottom: 1px solid #ecf0f1;
-    }
-    th {
-        background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-        font-weight: 600; color: #2c3e50; text-transform: uppercase;
-        letter-spacing: 0.5px; font-size: 0.85rem;
-    }
-    tr:hover { background: rgba(52, 152, 219, 0.05); }
-    .footer-info {
-        text-align: center; color: #7f8c8d; font-size: 0.95rem;
-        padding: 25px; background: rgba(255,255,255,0.7);
-        border-radius: 15px; backdrop-filter: blur(10px);
-    }
-    @media (max-width: 768px) {
-        .metrics-grid { grid-template-columns: 1fr; }
-        .metric-value { font-size: 3rem; }
-        h1 { font-size: 2rem; flex-direction: column; gap: 10px; }
-        .metric-icon { width: 50px; height: 50px; font-size: 1.5rem; }
-    }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ecf0f1; font-size: 0.9rem; }
+    th { background: #f8f9fa; font-weight: 600; color: #7f8c8d; text-transform: uppercase; font-size: 0.75rem; }
+    .footer-info { text-align: center; color: #7f8c8d; font-size: 0.85rem; margin-top: 30px; padding-bottom: 30px; }
     </style>
 </head>
 <body>
     <div class="container">
-    <h1>
-        <i class="fas fa-microchip" style="font-size: 3rem; color: #e74c3c;"></i>
-        Raspberry Pi 5 Cooling Dashboard
-    </h1>
+        <h1><i class="fas fa-microchip"></i> Raspberry Pi 5 Cooling Dashboard</h1>
 
-    <div class="metrics-grid" id="metrics">
-        <div class="metric-card metric-normal">
-            <div class="metric-header">
-                <div class="metric-icon icon-temp">
-                    <i class="fas fa-thermometer-half"></i>
+        <div class="metrics-grid">
+            <!-- CPU Temp -->
+            <div class="metric-card metric-normal" id="tempCard">
+                <div class="metric-header">
+                    <div class="metric-icon icon-temp"><i class="fas fa-thermometer-half"></i></div>
+                    <div class="metric-title">CPU Temp</div>
                 </div>
-                <div>
-                    <div class="metric-title">CPU Temperature</div>
-                    <div class="metric-label">Current core temperature</div>
-                </div>
+                <div class="metric-value temp-value" id="tempValue">--°C</div>
+                <span class="metric-status status-normal" id="tempStatus">Normal</span>
             </div>
-            <div class="metric-value temp-value" id="tempValue">--°C</div>
-            <span class="metric-status status-normal" id="tempStatus">
-                <i class="fas fa-circle-check"></i> Normal
-            </span>
+
+            <!-- Fan RPM -->
+            <div class="metric-card metric-normal" id="fanCard">
+                <div class="metric-header">
+                    <div class="metric-icon icon-fan"><i class="fas fa-fan"></i></div>
+                    <div class="metric-title">Fan Speed</div>
+                </div>
+                <div class="metric-value fan-value" id="fanValue">-- RPM</div>
+                <span class="metric-status status-normal" id="fanStatus">Running</span>
+            </div>
+
+            <!-- CPU Usage -->
+            <div class="metric-card metric-normal" id="cpuCard">
+                <div class="metric-header">
+                    <div class="metric-icon icon-cpu"><i class="fas fa-processor"></i></div>
+                    <div class="metric-title">CPU Load</div>
+                </div>
+                <div class="metric-value cpu-value" id="cpuValue">--%</div>
+                <span class="metric-status status-normal" id="cpuStatus">Normal</span>
+            </div>
+
+            <!-- RAM Usage -->
+            <div class="metric-card metric-normal" id="ramCard">
+                <div class="metric-header">
+                    <div class="metric-icon icon-ram"><i class="fas fa-memory"></i></div>
+                    <div class="metric-title">RAM Usage</div>
+                </div>
+                <div class="metric-value ram-value" id="ramValue">--%</div>
+                <span class="metric-status status-normal" id="ramStatus">Normal</span>
+            </div>
         </div>
 
-        <div class="metric-card metric-normal">
-            <div class="metric-header">
-                <div class="metric-icon icon-fan">
-                    <i class="fas fa-fan"></i>
-                </div>
-                <div>
-                    <div class="metric-title">Active Cooler</div>
-                    <div class="metric-label">Fan rotation speed</div>
-                </div>
-            </div>
-            <div class="metric-value fan-value" id="fanValue">-- RPM</div>
-            <span class="metric-status status-idle" id="fanStatus">
-                <i class="fas fa-power-off"></i> Idle
-            </span>
+        <div class="chart-container">
+            <div class="chart-header"><i class="fas fa-chart-line"></i> Performance History (Last 30 mins)</div>
+            <canvas id="historyChart" height="100"></canvas>
+        </div>
+
+        <div class="readings-section">
+            <div class="chart-header"><i class="fas fa-list"></i> Recent Raw Readings</div>
+            <table id="readingsTable">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Temp</th>
+                        <th>Fan</th>
+                        <th>CPU %</th>
+                        <th>RAM %</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="footer-info">
+            Auto-refreshing every 3s • Last update: <span id="lastUpdate">{{ timestamp }}</span>
         </div>
     </div>
-    <div class="chart-section">
-        <div class="section-header">
-            <i class="fas fa-chart-line"></i>
-            Recent Readings (Last 10)
-        </div>
-        <table id="readingsTable">
-            <thead>
-                <tr>
-                    <th><i class="fas fa-clock"></i> Time</th>
-                    <th><i class="fas fa-thermometer-half"></i> Temp (°C)</th>
-                    <th><i class="fas fa-fan"></i> Fan (RPM)</th>
-                    <th><i class="fas fa-info-circle"></i> Status</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-    </div>
-    <div class="footer-info">
-        <div><i class="fas fa-sync-alt"></i> Last update: <span id="lastUpdate">{{ timestamp }}</span></div>
-        <div><i class="fas fa-clock"></i> Auto-refresh every 3 seconds &bull; <i class="fas fa-raspberry-pi"></i> Raspberry Pi 5 Active Cooler</div>
-    </div>
-    </div>
+
     <script>
-    const readings = [];
+    let chart;
+    const history = { labels: [], temp: [], fan: [], cpu: [], ram: [] };
+
+    function initChart() {
+        const ctx = document.getElementById('historyChart').getContext('2d');
+        chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: history.labels,
+                datasets: [
+                    { label: 'Temp (°C)', data: history.temp, borderColor: '#e74c3c', tension: 0.3, yAxisID: 'y' },
+                    { label: 'CPU %', data: history.cpu, borderColor: '#9b59b6', tension: 0.3, yAxisID: 'y' },
+                    { label: 'RAM %', data: history.ram, borderColor: '#f1c40f', tension: 0.3, yAxisID: 'y' },
+                    { label: 'Fan RPM', data: history.fan, borderColor: '#3498db', tension: 0.3, yAxisID: 'y1' }
+                ]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { type: 'linear', position: 'left', min: 0, max: 100 },
+                    y1: { type: 'linear', position: 'right', min: 0, grid: { drawOnChartArea: false } }
+                },
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+    }
+
     function updateDashboard() {
         fetch('/api/stats')
             .then(r => r.json())
             .then(data => {
+                // Update Values
                 document.getElementById('tempValue').textContent = data.temp + '°C';
                 document.getElementById('fanValue').textContent = data.fan_rpm.toLocaleString() + ' RPM';
-                document.getElementById('tempStatus').innerHTML =
-                    `<i class="fas fa-${data.status_temp === 'Critical' ? 'exclamation-triangle' : data.status_temp === 'Warning' ? 'exclamation-circle' : 'circle-check'}"></i> ${data.status_temp}`;
-                document.getElementById('fanStatus').innerHTML =
-                    `<i class="fas fa-${data.status_fan === 'Idle' ? 'power-off' : 'play-circle'}"></i> ${data.status_fan}`;
+                document.getElementById('cpuValue').textContent = data.cpu_usage + '%';
+                document.getElementById('ramValue').textContent = data.ram_usage + '%';
                 document.getElementById('lastUpdate').textContent = data.timestamp;
 
-                const tempCard = document.querySelector('.metric-card:nth-child(1)');
-                const fanCard = document.querySelector('.metric-card:nth-child(2)');
-                tempCard.className = 'metric-card ' + (data.temp > 80 ? 'metric-critical' : data.temp > 70 ? 'metric-warning' : 'metric-normal');
-                fanCard.className = 'metric-card ' + (data.fan_rpm > 5500 ? 'metric-critical' : data.fan_rpm > 4500 ? 'metric-warning' : 'metric-normal');
+                // Update Card Status Styles
+                const setStatus = (id, val, w, c) => {
+                    const card = document.getElementById(id + 'Card');
+                    const status = document.getElementById(id + 'Status');
+                    const s = val > c ? 'critical' : val > w ? 'warning' : 'normal';
+                    card.className = `metric-card metric-${s}`;
+                    status.className = `metric-status status-${s}`;
+                    status.textContent = s.charAt(0).toUpperCase() + s.slice(1);
+                };
 
-                document.getElementById('tempStatus').className = 'metric-status status-' +
-                    (data.temp > 80 ? 'critical' : data.temp > 70 ? 'warning' : 'normal');
-                document.getElementById('fanStatus').className = 'metric-status status-' +
-                    (data.status_fan === 'Idle' ? 'idle' : 'running');
+                setStatus('temp', data.temp, 70, 80);
+                setStatus('cpu', data.cpu_usage, 80, 95);
+                setStatus('ram', data.ram_usage, 80, 95);
+                
+                const fanCard = document.getElementById('fanCard');
+                const fanStatus = document.getElementById('fanStatus');
+                const fs = data.fan_rpm > 5500 ? 'critical' : data.fan_rpm > 4500 ? 'warning' : 'normal';
+                fanCard.className = `metric-card metric-${fs}`;
+                fanStatus.className = `metric-status status-${data.fan_rpm > 0 ? (fs === 'normal' ? 'normal' : fs) : 'normal'}`;
+                fanStatus.textContent = data.fan_rpm > 0 ? 'Running' : 'Idle';
 
-                readings.unshift({time: data.timestamp, temp: data.temp, fan: data.fan_rpm, status: data.status_temp});
-                if (readings.length > 10) readings.pop();
+                // Update Chart
+                if (history.labels.length > 20) {
+                    history.labels.shift(); history.temp.shift(); history.fan.shift(); history.cpu.shift(); history.ram.shift();
+                }
+                history.labels.push(data.timestamp);
+                history.temp.push(data.temp);
+                history.fan.push(data.fan_rpm);
+                history.cpu.push(data.cpu_usage);
+                history.ram.push(data.ram_usage);
+                chart.update();
 
+                // Update Table
                 const tbody = document.querySelector('#readingsTable tbody');
-                tbody.innerHTML = readings.map(r =>
-                    `<tr>
-                        <td><i class="fas fa-clock text-xs"></i> ${r.time}</td>
-                        <td><i class="fas fa-thermometer-${r.temp > 70 ? 'three-quarters' : 'half'} text-xs"></i> ${r.temp}</td>
-                        <td><i class="fas fa-tachometer-alt text-xs"></i> ${r.fan.toLocaleString()}</td>
-                        <td>${r.status}</td>
-                    </tr>`
-                ).join('');
+                const row = `<tr><td>${data.timestamp}</td><td>${data.temp}</td><td>${data.fan_rpm}</td><td>${data.cpu_usage}</td><td>${data.ram_usage}</td></tr>`;
+                tbody.insertAdjacentHTML('afterbegin', row);
+                if (tbody.children.length > 10) tbody.lastElementChild.remove();
             });
     }
 
+    initChart();
     updateDashboard();
     setInterval(updateDashboard, 3000);
     </script>
 </body>
 </html>'''
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=False)
