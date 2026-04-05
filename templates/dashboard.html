@@ -1,163 +1,181 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RPi 5 Dashboard</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Real-time monitoring dashboard for Raspberry Pi 5 system performance" />
+    <title>RPi 5 Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <div class="topbar-inner">
-      <div class="topbar-left">
-        <i class="fas fa-microchip topbar-icon"></i>
-        <span class="topbar-title">Raspberry Pi 5 &mdash; System Monitor</span>
-      </div>
-      <div class="topbar-right">
-        <span class="live-badge" id="liveBadge">
-          <span class="live-dot" id="liveDot"></span> LIVE
-        </span>
-        <span class="topbar-ts" id="lastUpdate">{{ timestamp }}</span>
-                    <button class="theme-toggle-btn" id="themeToggle" title="Toggle theme">
-                <span id="themeIcon">☀️</span>
-            </button>
-      </div>
-    </div>
-  </header>
-
-  <main class="container">
-
-    <!-- Alert banner for throttle issues -->
-    {% if not throttle_healthy %}
-    <div class="alert-banner alert-crit">
-      <i class="fas fa-triangle-exclamation"></i>
-      <strong>Throttle alert:</strong> {{ throttle_status }}
-    </div>
-    {% endif %}
-
-    <!-- Metric cards -->
-    <section class="metrics-grid">
-
-      <!-- Temperature -->
-      <div class="metric-card" id="tempCard" data-status="{{ status_temp|lower }}">
-        <div class="card-header">
-          <span class="card-label">CPU Temp</span>
-          <span class="card-badge" id="throttleStatus">{{ throttle_status }}</span>
+    <header class="topbar" role="banner">
+        <div class="topbar-inner">
+            <div class="topbar-left">
+                <i class="fas fa-microchip topbar-icon" aria-hidden="true"></i>
+                <h1 class="topbar-title">Raspberry Pi 5 &mdash; System Monitor</h1>
+            </div>
+            <div class="topbar-right">
+                <span class="live-badge" id="liveBadge" role="status" aria-live="polite">
+                    <span class="live-dot" id="liveDot" aria-hidden="true"></span> 
+                    <span class="sr-only">Connection status: </span>LIVE
+                </span>
+                <time class="topbar-ts" id="lastUpdate" datetime="{{ timestamp }}">{{ timestamp }}</time>
+                <button class="theme-toggle-btn" id="themeToggle" aria-label="Toggle dark/light theme" title="Toggle theme">
+                    <span id="themeIcon" aria-hidden="true">☀️</span>
+                </button>
+            </div>
         </div>
-        <div class="card-value" id="tempValue" style="color:var(--c-temp)">{{ temp }}&deg;C</div>
-        <div class="card-sub" id="clockValue">{{ clock_speed }} MHz</div>
-        {% if not temp_available %}
-        <div class="sensor-warn"><i class="fas fa-triangle-exclamation"></i> Sensor unavailable</div>
+    </header>
+
+    <main class="container" role="main">
+        <!-- Alert banner for throttle issues -->
+        {% if not throttle_healthy %}
+        <div class="alert-banner alert-crit" role="alert" aria-live="assertive">
+            <i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
+            <strong>Throttle alert:</strong> {{ throttle_status }}
+        </div>
         {% endif %}
-      </div>
 
-          <!-- Thermal Zones Panel -->
-    <div class="panel">
-        <div class="panel-header">
-            <span><i class="fas fa-thermometer-half"></i> All Thermal Zones</span>
-        </div>
-        <div class="zones-grid" id="thermalZones">
-            <!-- Populated by JavaScript -->
-        </div>
-    </div>
+        <!-- Metric cards -->
+        <section class="metrics-grid" aria-label="System metrics">
+            <!-- Temperature -->
+            <article class="metric-card" id="tempCard" data-status="{{ status_temp|lower }}" role="region" aria-labelledby="temp-label">
+                <div class="card-header">
+                    <span class="card-label" id="temp-label">CPU Temp</span>
+                    <span class="card-badge" id="throttleStatus" role="status">{{ throttle_status }}</span>
+                </div>
+                <div class="card-value" id="tempValue" style="color:var(--c-temp)" aria-live="polite">{{ temp }}&deg;C</div>
+                <div class="card-sub" id="clockValue" aria-live="polite">{{ clock_speed }} MHz</div>
+                {% if not temp_available %}
+                <div class="sensor-warn" role="alert"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> Sensor unavailable</div>
+                {% endif %}
+            </article>
 
-      <!-- Fan -->
-      <div class="metric-card" id="fanCard" data-status="{{ 'normal' if fan_available else 'warn' }}">
-        <div class="card-header">
-          <span class="card-label">Fan Speed</span>
-          <span class="card-badge" id="fanStatus">{{ status_fan }}</span>
-        </div>
-        <div class="card-value" id="fanValue" style="color:var(--c-fan)">{{ fan_rpm }} <small>RPM</small></div>
-        {% if not fan_available %}
-        <div class="sensor-warn"><i class="fas fa-triangle-exclamation"></i> Sensor unavailable</div>
-        {% endif %}
-      </div>
+            <!-- Thermal Zones Panel -->
+            <article class="panel" role="region" aria-labelledby="thermal-zones-label">
+                <div class="panel-header">
+                    <h2 id="thermal-zones-label"><i class="fas fa-thermometer-half" aria-hidden="true"></i> All Thermal Zones</h2>
+                </div>
+                <div class="zones-grid" id="thermalZones" aria-live="polite">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </article>
 
-      <!-- CPU Load -->
-      <div class="metric-card" id="cpuCard" data-status="{{ status_cpu|lower }}">
-        <div class="card-header">
-          <span class="card-label">CPU Load</span>
-          <span class="card-badge" id="cpuStatus">{{ status_cpu }}</span>
-        </div>
-        <div class="card-value" id="cpuValue" style="color:var(--c-cpu)">{{ cpu_usage }}%</div>
-        <div class="progress-bar"><div class="progress-fill" id="cpuFill"></div></div>
-      </div>
+            <!-- Fan -->
+            <article class="metric-card" id="fanCard" data-status="{{ 'normal' if fan_available else 'warn' }}" role="region" aria-labelledby="fan-label">
+                <div class="card-header">
+                    <span class="card-label" id="fan-label">Fan Speed</span>
+                    <span class="card-badge" id="fanStatus" role="status">{{ status_fan }}</span>
+                </div>
+                <div class="card-value" id="fanValue" style="color:var(--c-fan)" aria-live="polite">{{ fan_rpm }} <small>RPM</small></div>
+                {% if not fan_available %}
+                <div class="sensor-warn" role="alert"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> Sensor unavailable</div>
+                {% endif %}
+            </article>
 
-      <!-- RAM -->
-      <div class="metric-card" id="ramCard" data-status="{{ status_ram|lower }}">
-        <div class="card-header">
-          <span class="card-label">RAM</span>
-          <span class="card-badge" id="ramStatus">{{ status_ram }}</span>
-        </div>
-        <div class="card-value" id="ramValue" style="color:var(--c-ram)">{{ ram_usage }}%</div>
-        <div class="progress-bar"><div class="progress-fill" id="ramFill"></div></div>
-      </div>
+            <!-- CPU Load -->
+            <article class="metric-card" id="cpuCard" data-status="{{ status_cpu|lower }}" role="region" aria-labelledby="cpu-label">
+                <div class="card-header">
+                    <span class="card-label" id="cpu-label">CPU Load</span>
+                    <span class="card-badge" id="cpuStatus" role="status">{{ status_cpu }}</span>
+                </div>
+                <div class="card-value" id="cpuValue" style="color:var(--c-cpu)" aria-live="polite">{{ cpu_usage }}%</div>
+                <div class="progress-bar" role="progressbar" aria-valuenow="{{ cpu_usage }}" aria-valuemin="0" aria-valuemax="100" aria-label="CPU usage">
+                    <div class="progress-fill" id="cpuFill"></div>
+                </div>
+            </article>
 
-      <!-- Disk -->
-      <div class="metric-card" id="diskCard" data-status="{{ status_disk|lower }}">
-        <div class="card-header">
-          <span class="card-label">Disk</span>
-          <span class="card-badge" id="diskStatus">{{ status_disk }}</span>
-        </div>
-        <div class="card-value" id="diskValue" style="color:var(--c-disk)">{{ disk_usage }}%</div>
-        <div class="card-sub" id="diskFree">{{ disk_free }} GB free / {{ disk_total }} GB</div>
-        <div class="progress-bar"><div class="progress-fill" id="diskFill"></div></div>
-      </div>
+            <!-- RAM -->
+            <article class="metric-card" id="ramCard" data-status="{{ status_ram|lower }}" role="region" aria-labelledby="ram-label">
+                <div class="card-header">
+                    <span class="card-label" id="ram-label">RAM</span>
+                    <span class="card-badge" id="ramStatus" role="status">{{ status_ram }}</span>
+                </div>
+                <div class="card-value" id="ramValue" style="color:var(--c-ram)" aria-live="polite">{{ ram_usage }}%</div>
+                <div class="progress-bar" role="progressbar" aria-valuenow="{{ ram_usage }}" aria-valuemin="0" aria-valuemax="100" aria-label="RAM usage">
+                    <div class="progress-fill" id="ramFill"></div>
+                </div>
+            </article>
 
-    </section>
+            <!-- Disk -->
+            <article class="metric-card" id="diskCard" data-status="{{ status_disk|lower }}" role="region" aria-labelledby="disk-label">
+                <div class="card-header">
+                    <span class="card-label" id="disk-label">Disk</span>
+                    <span class="card-badge" id="diskStatus" role="status">{{ status_disk }}</span>
+                </div>
+                <div class="card-value" id="diskValue" style="color:var(--c-disk)" aria-live="polite">{{ disk_usage }}%</div>
+                <div class="card-sub" id="diskFree" aria-live="polite">{{ disk_free }} GB free / {{ disk_total }} GB</div>
+                <div class="progress-bar" role="progressbar" aria-valuenow="{{ disk_usage }}" aria-valuemin="0" aria-valuemax="100" aria-label="Disk usage">
+                    <div class="progress-fill" id="diskFill"></div>
+                </div>
+            </article>
+        </section>
 
-    <!-- History chart + process table -->
-    <section class="layout-split">
-      <div class="panel chart-panel">
-        <div class="panel-header">
-          <span><i class="fas fa-chart-line"></i> Performance History</span
-                                                                                   <button class="export-csv-btn" id="exportCsvBtn" title="Export history as CSV">
-                <i class="fas fa-download"></i> Export CSV
-            </button>>
-          <div class="time-tabs" id="timeTabs">
-            <button class="tab-btn active" data-hours="1">1h</button>
-            <button class="tab-btn" data-hours="6">6h</button>
-            <button class="tab-btn" data-hours="24">24h</button>
-            <button class="tab-btn" data-hours="168">7d</button>
-          </div>
-        </div>
-        <div class="chart-wrapper">
-          <canvas id="historyChart"></canvas>
-        </div>
-      </div>
+        <!-- History chart + process table -->
+        <section class="layout-split">
+            <article class="panel chart-panel" role="region" aria-labelledby="history-label">
+                <div class="panel-header">
+                    <h2 id="history-label"><i class="fas fa-chart-line" aria-hidden="true"></i> Performance History</h2>
+                    <button class="export-csv-btn" id="exportCsvBtn" aria-label="Export history as CSV" title="Export history as CSV">
+                        <i class="fas fa-download" aria-hidden="true"></i> Export CSV
+                    </button>
+                    <div class="time-tabs" id="timeTabs" role="tablist" aria-label="Time range selection">
+                        <button class="tab-btn active" data-hours="1" role="tab" aria-selected="true" aria-controls="historyChart">1h</button>
+                        <button class="tab-btn" data-hours="6" role="tab" aria-selected="false" aria-controls="historyChart">6h</button>
+                        <button class="tab-btn" data-hours="24" role="tab" aria-selected="false" aria-controls="historyChart">24h</button>
+                        <button class="tab-btn" data-hours="168" role="tab" aria-selected="false" aria-controls="historyChart">7d</button>
+                    </div>
+                </div>
+                <div class="chart-wrapper">
+                    <canvas id="historyChart" role="img" aria-label="Performance history chart"></canvas>
+                </div>
+            </article>
 
-      <div class="panel procs-panel">
-        <div class="panel-header"><span><i class="fas fa-bolt"></i> Top Processes</span></div>
-        <table id="procTable">
-          <thead><tr><th>Name</th><th class="num">CPU %</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
+            <article class="panel procs-panel" role="region" aria-labelledby="processes-label">
+                <div class="panel-header">
+                    <h2 id="processes-label"><i class="fas fa-bolt" aria-hidden="true"></i> Top Processes</h2>
+                </div>
+                <table id="procTable" role="table" aria-label="Top CPU consuming processes">
+                    <thead>
+                        <tr>
+                            <th scope="col">Name</th>
+                            <th scope="col" class="num">CPU %</th>
+                        </tr>
+                    </thead>
+                    <tbody aria-live="polite">
+                    </tbody>
+                </table>
+            </article>
+        </section>
 
-    <!-- Raw readings table -->
-    <section class="panel readings-panel">
-      <div class="panel-header"><span><i class="fas fa-table-list"></i> Recent Readings</span></div>
-      <div class="table-scroll">
-        <table id="readingsTable">
-          <thead>
-            <tr>
-              <th>Time</th><th class="num">Temp &deg;C</th><th class="num">Fan RPM</th>
-              <th class="num">CPU %</th><th class="num">RAM %</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
+        <!-- Raw readings table -->
+        <section class="panel readings-panel" role="region" aria-labelledby="readings-label">
+            <div class="panel-header">
+                <h2 id="readings-label"><i class="fas fa-table-list" aria-hidden="true"></i> Recent Readings</h2>
+            </div>
+            <div class="table-scroll">
+                <table id="readingsTable" role="table" aria-label="Recent system readings">
+                    <thead>
+                        <tr>
+                            <th scope="col">Time</th>
+                            <th scope="col" class="num">Temp &deg;C</th>
+                            <th scope="col" class="num">Fan RPM</th>
+                            <th scope="col" class="num">CPU %</th>
+                            <th scope="col" class="num">RAM %</th>
+                        </tr>
+                    </thead>
+                    <tbody aria-live="polite">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
 
-  </main>
-
-  <script>
-    window.THRESHOLDS = {{ thresholds | tojson }};
-  </script>
-  <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script>
+        window.THRESHOLDS = {{ thresholds | tojson }};
+    </script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>
 </html>
