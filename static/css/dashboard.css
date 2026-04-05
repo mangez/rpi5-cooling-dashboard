@@ -288,3 +288,119 @@ tbody tr:hover { background: var(--surface2); }
   .card-value { font-size: 1.6rem; }
   .topbar-title { display: none; }
 }
+
+
+@media (max-width: 600px) {
+  .metrics-grid { grid-template-columns: 1fr 1fr; }
+  .card-value { font-size: 1.6rem; }
+  .topbar-title { display: none; }
+}
+
+/* ============================================================
+   Light theme
+   ============================================================ */
+:root[data-theme="light"] {
+  --bg:          #ffffff;
+  --surface:     #f6f8fa;
+  --surface2:    #eaeef2;
+  --border:      #d0d7de;
+  --text:        #24292f;
+  --text-muted:  #57606a;
+
+  --c-normal:  #1a7f37;
+  --c-warn:    #9a6700;
+  --c-crit:    #cf222e;
+
+  --c-temp:  #cf222e;
+  --c-fan:   #0969da;
+  --c-cpu:   #8250df;
+  --c-ram:   #bf8700;
+  --c-disk:  #1a7f37;
+}
+
+/* ============================================================
+   Theme toggle button
+   ============================================================ */
+.theme-toggle-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--border);
+  transform: scale(1.02);
+}
+
+.theme-toggle-btn:active {
+  transform: scale(0.98);
+}
+
+/* ============================================================
+   Thermal zones panel
+   ============================================================ */
+.zones-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.zone-item {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+}
+
+.zone-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.zone-temp {
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+/* ============================================================
+   Export CSV button
+   ============================================================ */
+.export-csv-btn {
+  background: var(--c-fan);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.export-csv-btn:hover {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+
+.export-csv-btn:active {
+  transform: scale(0.98);
+}

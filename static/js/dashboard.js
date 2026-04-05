@@ -211,6 +211,9 @@
       while (rt.children.length > MAX_READINGS) rt.lastElementChild.remove();
     }
 
+        // Render thermal zones
+    renderThermalZones(data.thermal_zones);
+
     updateLive();
   }
 
@@ -238,11 +241,61 @@
   // -------------------------------------------------------------------------
   // Boot
   // -------------------------------------------------------------------------
+
+// ------------------------------------------------------------------------- 
+// Theme toggle
+// -------------------------------------------------------------------------
+function initTheme() {
+    const toggle = document.getElementById('themeToggle');
+    const icon = document.getElementById('themeIcon');
+    const stored = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', stored);
+    icon.textContent = stored === 'dark' ? '☀️' : '🌙';
+    if (toggle) {
+        toggle.addEventListener('click', function () {
+            const current = document.documentElement.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+            icon.textContent = next === 'dark' ? '☀️' : '🌙';
+        });
+    }
+}
+
+// -------------------------------------------------------------------------
+// Thermal zones rendering
+// -------------------------------------------------------------------------
+function renderThermalZones(zones) {
+    const container = document.getElementById('thermalZones');
+    if (!container || !zones || zones.length === 0) return;
+    container.innerHTML = zones.map(function (z) {
+        return (
+            '<div class="zone-item">' +
+            '<div class="zone-label">' + z.type + ' (Zone ' + z.id + ')</div>' +
+            '<div class="zone-temp">' + z.temp + '°C</div>' +
+            '</div>'
+        );
+    }).join('');
+}
+
+// -------------------------------------------------------------------------
+// CSV Export button
+// -------------------------------------------------------------------------
+function initCsvExport() {
+    const btn = document.getElementById('exportCsvBtn');
+    if (btn) {
+        btn.addEventListener('click', function () {
+            window.location.href = '/api/export/csv?hours=' + activeHours;
+        });
+    }
+}
   initChart();
   initTimeTabs();
   loadHistory(activeHours);
   poll();
   setInterval(poll, POLL_MS);
+  initTheme();
+initCsvExport();
   setInterval(updateLive, 5000);
   // Refresh history every minute so chart stays up to date without full reload
   setInterval(function () { loadHistory(activeHours); }, 60000);
