@@ -20,6 +20,9 @@
           <span class="live-dot" id="liveDot"></span> LIVE
         </span>
         <span class="topbar-ts" id="lastUpdate">{{ timestamp }}</span>
+                    <button class="theme-toggle-btn" id="themeToggle" title="Toggle theme">
+                <span id="themeIcon">☀️</span>
+            </button>
       </div>
     </div>
   </header>
@@ -49,6 +52,16 @@
         <div class="sensor-warn"><i class="fas fa-triangle-exclamation"></i> Sensor unavailable</div>
         {% endif %}
       </div>
+
+          <!-- Thermal Zones Panel -->
+    <div class="panel">
+        <div class="panel-header">
+            <span><i class="fas fa-thermometer-half"></i> All Thermal Zones</span>
+        </div>
+        <div class="zones-grid" id="thermalZones">
+            <!-- Populated by JavaScript -->
+        </div>
+    </div>
 
       <!-- Fan -->
       <div class="metric-card" id="fanCard" data-status="{{ 'normal' if fan_available else 'warn' }}">
@@ -99,7 +112,10 @@
     <section class="layout-split">
       <div class="panel chart-panel">
         <div class="panel-header">
-          <span><i class="fas fa-chart-line"></i> Performance History</span>
+          <span><i class="fas fa-chart-line"></i> Performance History</span
+                                                                                   <button class="export-csv-btn" id="exportCsvBtn" title="Export history as CSV">
+                <i class="fas fa-download"></i> Export CSV
+            </button>>
           <div class="time-tabs" id="timeTabs">
             <button class="tab-btn active" data-hours="1">1h</button>
             <button class="tab-btn" data-hours="6">6h</button>
