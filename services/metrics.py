@@ -1,8 +1,88 @@
 import glob
+import os
+import sqlite3
 import subprocess
+from contextlib import contextmanager
 from datetime import datetime
 
 import psutil
+
+# ---------------------------------------------------------------------------
+# Config (all overridable via environment variables)
+# ---------------------------------------------------------------------------
+DB_PATH = os.environ.get("HISTORY_DB_PATH", "/tmp/rpi_dashboard.db")
+HISTORY_DAYS = int(os.environ.get("HISTORY_DAYS", "7"))
+TEMP_WARN = float(os.environ.get("TEMP_WARN", "70"))
+TEMP_CRIT = float(os.environ.get("TEMP_CRIT", "80"))
+CPU_WARN = float(os.environ.get("CPU_WARN", "70"))
+CPU_CRIT = float(os.environ.get("CPU_CRIT", "85"))
+RAM_WARN = float(os.environ.get("RAM_WARN", "70"))
+RAM_CRIT = float(os.environ.get("RAM_CRIT", "85"))
+DISK_WARN = float(os.environ.get("DISK_WARN", "80"))
+DISK_CRIT = float(os.environ.get("DISK_CRIT", "90"))
+
+# ---------------------------------------------------------------------------
+# SQLite persistent history
+# ---------------------------------------------------------------------------
+
+def _init_db():
+    with _db() as con:
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS readings (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts        TEXT    NOT NULL,
+                epoch     INTEGER NOT NULL,
+                temp      REAL,
+                fan_rpm   INTEGER,
+                cpu       REAL,
+                ram       REAL,
+                disk      REAL,
+                clock_mhz INTEGER
+            )
+        """)
+        con.execute("CREATE INDEX IF NOT EXISTS idx_epoch ON readings(epoch)")
+
+
+@contextmanager
+def _db():
+    con = sqlite3.connect(DB_PATH, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    try:
+        yield con
+        con.commit()
+    finally:
+        con.close()
+
+
+def _store_reading(stats: dict):
+    epoch = int(datetime.now().timestamp())
+    with _db() as con:
+        con.execute(
+            "INSERT INTO readings (ts, epoch, temp, fan_rpm, cpu, ram, disk, clock_mhz) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                stats["timestamp"], epoch,
+                stats["temp"], stats["fan_rpm"],
+                stats["cpu_usage"], stats["ram_usage"],
+                stats["disk_usage"], stats["clock_speed"],
+            ),
+        )
+        # Prune rows older than HISTORY_DAYS
+        cutoff = epoch - HISTORY_DAYS * 86400
+        con.execute("DELETE FROM readings WHERE epoch < ?", (cutoff,))
+
+
+def get_history(hours: int = 1) -> list:
+    """Return readings from the last `hours` hours as a list of dicts."""
+    cutoff = int(datetime.now().timestamp()) - hours * 3600
+    with _db() as con:
+        rows = con.execute(
+            "SELECT ts, epoch, temp, fan_rpm, cpu, ram, disk, clock_mhz "
+            "FROM readings WHERE epoch >= ? ORDER BY epoch ASC",
+            (cutoff,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
 
 # ---------------------------------------------------------------------------
 # Throttle / Power status
@@ -18,48 +98,30 @@ THROTTLE_BITS = {
 
 
 def get_throttled_status():
-    """Return a structured dict describing current and historical throttle state."""
     try:
         out = subprocess.check_output(["vcgencmd", "get_throttled"]).decode().strip()
-        status_hex = out.split("=")[1]
-        status_int = int(status_hex, 16)
+        status_int = int(out.split("=")[1], 16)
     except Exception:
-        return {
-            "label": "N/A",
-            "healthy": False,
-            "current": [],
-            "historical": [],
-            "available": False,
-        }
+        return {"label": "N/A", "healthy": False, "current": [], "historical": [], "available": False}
 
-    current = []
-    historical = []
-    for bit, (desc, is_historical) in THROTTLE_BITS.items():
+    current, historical = [], []
+    for bit, (desc, is_hist) in THROTTLE_BITS.items():
         if status_int & bit:
-            if is_historical:
-                historical.append(desc)
-            else:
-                current.append(desc)
+            (historical if is_hist else current).append(desc)
 
     all_issues = current + historical
-    return {
-        "label": "Healthy" if not all_issues else ", ".join(current) if current else "History: " + ", ".join(historical),
-        "healthy": not bool(current),
-        "current": current,
-        "historical": historical,
-        "available": True,
-    }
+    label = "Healthy"
+    if all_issues:
+        label = ", ".join(current) if current else "History: " + ", ".join(historical)
+    return {"label": label, "healthy": not bool(current),
+            "current": current, "historical": historical, "available": True}
 
 
 # ---------------------------------------------------------------------------
 # Process list
 # ---------------------------------------------------------------------------
 
-_PROC_INTERVAL_CACHE = {}
-
-
 def get_top_processes(n=5):
-    """Return top-N processes by CPU percent, primed over a 0.1 s interval."""
     procs = []
     for proc in psutil.process_iter(["pid", "name"]):
         try:
@@ -90,21 +152,19 @@ def _resolve_fan_path():
 
 
 def get_cpu_temp():
-    """Read CPU temperature. Returns (value_float, available_bool)."""
     try:
-        with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
             return round(int(f.read().strip()) / 1000, 1), True
     except Exception:
         return 0.0, False
 
 
 def get_fan_rpm():
-    """Read fan RPM from hwmon sysfs. Returns (value_int, available_bool)."""
     path = _resolve_fan_path()
     if not path:
         return 0, False
     try:
-        with open(path, "r") as f:
+        with open(path) as f:
             return int(f.read().strip()), True
     except Exception:
         return 0, False
@@ -114,9 +174,7 @@ def get_fan_rpm():
 # Aggregate stats
 # ---------------------------------------------------------------------------
 
-
 def get_stats():
-    """Collect all metrics and return a flat dict for the API and template."""
     temp, temp_available = get_cpu_temp()
     fan_rpm, fan_available = get_fan_rpm()
 
@@ -125,41 +183,51 @@ def get_stats():
     disk = psutil.disk_usage("/")
     cpu_freq = psutil.cpu_freq()
     clock_mhz = round(cpu_freq.current) if cpu_freq else 0
-
     throttle = get_throttled_status()
 
-    if temp >= 80:
-        status_temp = "Critical"
-    elif temp >= 70:
-        status_temp = "Warning"
-    else:
-        status_temp = "Normal"
+    def _level(val, warn, crit):
+        if val >= crit: return "Critical"
+        if val >= warn: return "Warning"
+        return "Normal"
 
-    return {
+    stats = {
         # Thermal
-        "temp": temp,
-        "temp_available": temp_available,
-        "status_temp": status_temp,
+        "temp": temp, "temp_available": temp_available,
+        "status_temp": _level(temp, TEMP_WARN, TEMP_CRIT),
         # Fan
-        "fan_rpm": fan_rpm,
-        "fan_available": fan_available,
+        "fan_rpm": fan_rpm, "fan_available": fan_available,
         "status_fan": "Idle" if fan_rpm == 0 else "Running",
         # CPU
-        "cpu_usage": cpu_usage,
-        "clock_speed": clock_mhz,
+        "cpu_usage": cpu_usage, "clock_speed": clock_mhz,
+        "status_cpu": _level(cpu_usage, CPU_WARN, CPU_CRIT),
         # Memory
         "ram_usage": memory.percent,
+        "status_ram": _level(memory.percent, RAM_WARN, RAM_CRIT),
         # Disk
         "disk_usage": disk.percent,
         "disk_free": round(disk.free / (1024 ** 3), 1),
         "disk_total": round(disk.total / (1024 ** 3), 1),
-        # Throttle (structured)
+        "status_disk": _level(disk.percent, DISK_WARN, DISK_CRIT),
+        # Throttle
         "throttle_status": throttle["label"],
         "throttle_healthy": throttle["healthy"],
         "throttle_current": throttle["current"],
         "throttle_historical": throttle["historical"],
+        # Thresholds (for client-side awareness)
+        "thresholds": {
+            "temp_warn": TEMP_WARN, "temp_crit": TEMP_CRIT,
+            "cpu_warn": CPU_WARN, "cpu_crit": CPU_CRIT,
+            "ram_warn": RAM_WARN, "ram_crit": RAM_CRIT,
+            "disk_warn": DISK_WARN, "disk_crit": DISK_CRIT,
+        },
         # Processes
         "top_procs": get_top_processes(),
         # Meta
         "timestamp": datetime.now().astimezone().strftime("%H:%M:%S"),
     }
+    _store_reading(stats)
+    return stats
+
+
+# Initialise DB on first import
+_init_db()
