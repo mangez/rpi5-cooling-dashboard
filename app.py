@@ -1,8 +1,8 @@
 import os
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 
-from services.metrics import get_stats
+from services.metrics import get_history, get_stats
 
 app = Flask(__name__)
 
@@ -16,6 +16,21 @@ def dashboard():
 @app.route("/api/stats")
 def api_stats():
     return jsonify(get_stats())
+
+
+@app.route("/api/history")
+def api_history():
+    """Return persisted readings. Query param: ?hours=1 (default 1, max 168)."""
+    try:
+        hours = min(int(request.args.get("hours", 1)), 168)
+    except (TypeError, ValueError):
+        hours = 1
+    return jsonify(get_history(hours))
+
+
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"}), 200
 
 
 if __name__ == "__main__":
