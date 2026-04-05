@@ -1,76 +1,65 @@
-/* dashboard.js – handles Chart.js initialisation and live polling */
-
+/* dashboard.js – live polling + persistent history chart + threshold alerts */
 (function () {
   'use strict';
 
-  const POLL_INTERVAL_MS = 3000;
-  const STALE_THRESHOLD_MS = 15000;
-  const MAX_HISTORY = 20;
-  const MAX_READINGS = 10;
+  const POLL_MS       = 3000;
+  const STALE_MS      = 15000;
+  const MAX_READINGS  = 15;
 
-  const history = { labels: [], temp: [], fan: [], cpu: [], ram: [] };
+  // Thresholds injected by Flask template, fallback defaults
+  const THR = window.THRESHOLDS || {
+    temp_warn: 70, temp_crit: 80,
+    cpu_warn: 70,  cpu_crit: 85,
+    ram_warn: 70,  ram_crit: 85,
+    disk_warn: 80, disk_crit: 90,
+  };
+
+  // CSS variable colour helpers
+  const COLOR = {
+    normal : 'var(--c-normal)',
+    warn   : 'var(--c-warn)',
+    crit   : 'var(--c-crit)',
+    temp   : 'var(--c-temp)',
+    fan    : 'var(--c-fan)',
+    cpu    : 'var(--c-cpu)',
+    ram    : 'var(--c-ram)',
+    disk   : 'var(--c-disk)',
+  };
+
   let chart;
-  let lastUpdateAt = Date.now();
+  let lastUpdateAt  = Date.now();
+  let activeHours   = 1;
+  let historyFetching = false;
 
   // -------------------------------------------------------------------------
-  // Chart initialisation
+  // Chart
   // -------------------------------------------------------------------------
   function initChart() {
     const ctx = document.getElementById('historyChart').getContext('2d');
     chart = new Chart(ctx, {
       type: 'line',
-      data: {
-        labels: history.labels,
-        datasets: [
-          {
-            label: 'Temp (\u00b0C)',
-            data: history.temp,
-            borderColor: '#e74c3c',
-            tension: 0.3,
-            borderWidth: 2.2,
-            pointRadius: 0,
-          },
-          {
-            label: 'Fan RPM / 100',
-            data: history.fan,
-            borderColor: '#3498db',
-            tension: 0.3,
-            borderWidth: 1.7,
-            pointRadius: 0,
-          },
-          {
-            label: 'CPU %',
-            data: history.cpu,
-            borderColor: '#9b59b6',
-            tension: 0.3,
-            borderWidth: 1.7,
-            pointRadius: 0,
-          },
-          {
-            label: 'RAM %',
-            data: history.ram,
-            borderColor: '#f1c40f',
-            tension: 0.3,
-            borderWidth: 1.7,
-            pointRadius: 0,
-          },
-        ],
-      },
+      data: { labels: [], datasets: [
+        { label: 'Temp °C',    data: [], borderColor: '#f85149', tension: 0.3, borderWidth: 2, pointRadius: 0, fill: false },
+        { label: 'Fan /100',   data: [], borderColor: '#58a6ff', tension: 0.3, borderWidth: 1.5, pointRadius: 0, fill: false },
+        { label: 'CPU %',      data: [], borderColor: '#bc8cff', tension: 0.3, borderWidth: 1.5, pointRadius: 0, fill: false },
+        { label: 'RAM %',      data: [], borderColor: '#e3b341', tension: 0.3, borderWidth: 1.5, pointRadius: 0, fill: false },
+      ]},
       options: {
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
+        animation: { duration: 200 },
         scales: {
-          y: { type: 'linear', position: 'left', min: 0, max: 100, ticks: { stepSize: 20 } },
+          x: { ticks: { maxTicksLimit: 8, color: '#8b949e', font: { size: 10 } }, grid: { color: '#21262d' } },
+          y: { min: 0, max: 100, ticks: { stepSize: 25, color: '#8b949e', font: { size: 10 } }, grid: { color: '#21262d' } },
         },
         plugins: {
-          legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, font: { size: 10 } } },
+          legend: { position: 'bottom', labels: { color: '#8b949e', usePointStyle: true, boxWidth: 8, font: { size: 10 } } },
           tooltip: {
             callbacks: {
-              label: function (ctx) {
-                const label = ctx.dataset.label || '';
-                if (label.includes('Fan')) return label + ': ' + (ctx.parsed.y * 100).toFixed(0) + ' RPM';
-                return label + ': ' + ctx.parsed.y;
+              label: function (c) {
+                if (c.dataset.label.includes('Fan')) return 'Fan: ' + (c.parsed.y * 100).toFixed(0) + ' RPM';
+                return c.dataset.label + ': ' + c.parsed.y;
               },
             },
           },
@@ -79,127 +68,161 @@
     });
   }
 
+  function loadHistory(hours) {
+    if (historyFetching) return;
+    historyFetching = true;
+    fetch('/api/history?hours=' + hours)
+      .then(function (r) { return r.json(); })
+      .then(function (rows) {
+        const d = chart.data;
+        d.labels = rows.map(function (r) { return r.ts; });
+        d.datasets[0].data = rows.map(function (r) { return r.temp; });
+        d.datasets[1].data = rows.map(function (r) { return +(r.fan_rpm / 100).toFixed(1); });
+        d.datasets[2].data = rows.map(function (r) { return r.cpu; });
+        d.datasets[3].data = rows.map(function (r) { return r.ram; });
+        chart.update();
+      })
+      .catch(function () {})
+      .finally(function () { historyFetching = false; });
+  }
+
   // -------------------------------------------------------------------------
-  // Card state helpers
+  // Time-range tabs
   // -------------------------------------------------------------------------
-  function setCardClass(id, stateClass) {
+  function initTimeTabs() {
+    const tabs = document.querySelectorAll('.tab-btn');
+    tabs.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        tabs.forEach(function (b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        activeHours = parseInt(btn.dataset.hours, 10);
+        loadHistory(activeHours);
+      });
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Status helpers
+  // -------------------------------------------------------------------------
+  function statusOf(val, warn, crit) {
+    if (val >= crit) return 'critical';
+    if (val >= warn) return 'warning';
+    return 'normal';
+  }
+
+  function setBadgeClass(el, status) {
+    if (!el) return;
+    el.className = 'card-badge';
+    if (status === 'warning')  el.classList.add('warn');
+    if (status === 'critical') el.classList.add('crit');
+  }
+
+  function setProgress(id, pct, warn, crit) {
     const el = document.getElementById(id);
-    if (el) el.className = 'metric-card ' + stateClass;
+    if (!el) return;
+    el.style.width = pct + '%';
+    el.style.background = pct >= crit ? COLOR.crit : pct >= warn ? COLOR.warn : COLOR.normal;
   }
 
-  function levelClass(value, warnThreshold, critThreshold) {
-    if (value >= critThreshold) return 'metric-critical';
-    if (value >= warnThreshold) return 'metric-warning';
-    return 'metric-normal';
+  function setText(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  function setCardStatus(id, status) {
+    const el = document.getElementById(id);
+    if (el) el.dataset.status = status;
   }
 
   // -------------------------------------------------------------------------
-  // DOM update
+  // Live update
   // -------------------------------------------------------------------------
   function applyData(data) {
     lastUpdateAt = Date.now();
 
-    // Values
-    setText('tempValue', data.temp + '\u00b0C');
-    setText('clockValue', 'Clock: ' + data.clock_speed + ' MHz');
-    setText('fanValue', data.fan_rpm + ' RPM');
-    setText('cpuValue', data.cpu_usage + '%');
-    setText('ramValue', data.ram_usage + '%');
-    setText('diskValue', data.disk_usage + '%');
-    setText('diskFree', 'Free: ' + data.disk_free + ' GB / ' + data.disk_total + ' GB');
+    // Header timestamp
     setText('lastUpdate', data.timestamp);
 
-    // Throttle badge
+    // --- Temperature ---
+    setText('tempValue', data.temp + '°C');
+    setText('clockValue', data.clock_speed + ' MHz');
+    const tempSt = statusOf(data.temp, THR.temp_warn, THR.temp_crit);
+    setCardStatus('tempCard', tempSt);
     const tb = document.getElementById('throttleStatus');
     if (tb) {
       tb.textContent = data.throttle_status;
-      tb.className = 'metric-status ' + (data.throttle_healthy ? 'status-normal' : 'status-critical');
+      setBadgeClass(tb, data.throttle_healthy ? 'normal' : 'critical');
     }
 
-    // Fan status badge
+    // --- Fan ---
+    setText('fanValue', data.fan_rpm + ' RPM');
     const fb = document.getElementById('fanStatus');
     if (fb) {
       fb.textContent = data.status_fan;
-      fb.className = 'metric-status ' + (data.status_fan === 'Idle' ? 'status-warning' : 'status-normal');
+      setBadgeClass(fb, data.fan_available ? 'normal' : 'warn');
     }
+    setCardStatus('fanCard', data.fan_available ? 'normal' : 'warn');
 
-    // Progress bars
-    setProgress('cpuFill', data.cpu_usage, '#9b59b6', '#e74c3c', 85);
-    setProgress('ramFill', data.ram_usage, '#f39c12', '#e74c3c', 85);
-    setProgress('diskFill', data.disk_usage, '#27ae60', '#e74c3c', 90);
+    // --- CPU ---
+    setText('cpuValue', data.cpu_usage + '%');
+    const cpuSt = statusOf(data.cpu_usage, THR.cpu_warn, THR.cpu_crit);
+    setCardStatus('cpuCard', cpuSt);
+    setBadgeClass(document.getElementById('cpuStatus'), cpuSt);
+    setText('cpuStatus', data.status_cpu);
+    setProgress('cpuFill', data.cpu_usage, THR.cpu_warn, THR.cpu_crit);
 
-    // Card border states
-    const tempState = (data.status_temp || 'Normal').toLowerCase().replace('critical', 'metric-critical').replace('warning', 'metric-warning').replace('normal', 'metric-normal');
-    setCardClass('tempCard', tempState);
-    setCardClass('cpuCard', levelClass(data.cpu_usage, 70, 85));
-    setCardClass('ramCard', levelClass(data.ram_usage, 70, 85));
-    setCardClass('diskCard', levelClass(data.disk_usage, 80, 90));
-    setCardClass('fanCard', data.fan_available ? 'metric-normal' : 'metric-warning');
+    // --- RAM ---
+    setText('ramValue', data.ram_usage + '%');
+    const ramSt = statusOf(data.ram_usage, THR.ram_warn, THR.ram_crit);
+    setCardStatus('ramCard', ramSt);
+    setBadgeClass(document.getElementById('ramStatus'), ramSt);
+    setText('ramStatus', data.status_ram);
+    setProgress('ramFill', data.ram_usage, THR.ram_warn, THR.ram_crit);
 
-    // Top processes table
+    // --- Disk ---
+    setText('diskValue', data.disk_usage + '%');
+    setText('diskFree', data.disk_free + ' GB free / ' + data.disk_total + ' GB');
+    const diskSt = statusOf(data.disk_usage, THR.disk_warn, THR.disk_crit);
+    setCardStatus('diskCard', diskSt);
+    setBadgeClass(document.getElementById('diskStatus'), diskSt);
+    setText('diskStatus', data.status_disk);
+    setProgress('diskFill', data.disk_usage, THR.disk_warn, THR.disk_crit);
+
+    // --- Top processes table ---
     const pt = document.querySelector('#procTable tbody');
     if (pt) {
       pt.innerHTML = (data.top_procs || []).map(function (p) {
-        return '<tr><td>' + p.name + '</td><td class="numeric" style="font-weight:bold">' + p.cpu_percent + '%</td></tr>';
+        return '<tr><td>' + p.name + '</td><td class="num">' + p.cpu_percent + '%</td></tr>';
       }).join('');
     }
 
-    // History chart
-    trimHistory();
-    history.labels.push(data.timestamp);
-    history.temp.push(data.temp);
-    history.fan.push(+(data.fan_rpm / 100).toFixed(1));
-    history.cpu.push(data.cpu_usage);
-    history.ram.push(data.ram_usage);
-    chart.update();
-
-    // Raw readings table
-    const tbody = document.querySelector('#readingsTable tbody');
-    if (tbody) {
-      const row = '<tr>' +
-        '<td>' + data.timestamp + '</td>' +
-        '<td class="numeric">' + data.temp + '</td>' +
-        '<td class="numeric">' + data.fan_rpm + '</td>' +
-        '<td class="numeric">' + data.cpu_usage + '%</td>' +
-        '<td class="numeric">' + data.ram_usage + '%</td>' +
-        '</tr>';
-      tbody.insertAdjacentHTML('afterbegin', row);
-      while (tbody.children.length > MAX_READINGS) tbody.lastElementChild.remove();
+    // --- Recent readings table (last MAX_READINGS rows live) ---
+    const rt = document.querySelector('#readingsTable tbody');
+    if (rt) {
+      rt.insertAdjacentHTML('afterbegin',
+        '<tr>' +
+          '<td>' + data.timestamp + '</td>' +
+          '<td class="num">' + data.temp + '</td>' +
+          '<td class="num">' + data.fan_rpm + '</td>' +
+          '<td class="num">' + data.cpu_usage + '%</td>' +
+          '<td class="num">' + data.ram_usage + '%</td>' +
+        '</tr>'
+      );
+      while (rt.children.length > MAX_READINGS) rt.lastElementChild.remove();
     }
 
-    updateLiveDot();
+    updateLive();
   }
 
   // -------------------------------------------------------------------------
-  // Helpers
+  // Live indicator
   // -------------------------------------------------------------------------
-  function setText(id, value) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = value;
-  }
-
-  function setProgress(id, value, normalColor, critColor, threshold) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.style.width = value + '%';
-    el.style.backgroundColor = value >= threshold ? critColor : normalColor;
-  }
-
-  function trimHistory() {
-    if (history.labels.length >= MAX_HISTORY) {
-      history.labels.shift();
-      history.temp.shift();
-      history.fan.shift();
-      history.cpu.shift();
-      history.ram.shift();
-    }
-  }
-
-  function updateLiveDot() {
-    const dot = document.getElementById('liveDot');
-    if (!dot) return;
-    const age = Date.now() - lastUpdateAt;
-    dot.classList.toggle('stale', age > STALE_THRESHOLD_MS);
+  function updateLive() {
+    const dot   = document.getElementById('liveDot');
+    const badge = document.getElementById('liveBadge');
+    const stale = Date.now() - lastUpdateAt > STALE_MS;
+    if (dot)   dot.classList.toggle('stale', stale);
+    if (badge) badge.classList.toggle('stale', stale);
   }
 
   // -------------------------------------------------------------------------
@@ -209,14 +232,19 @@
     fetch('/api/stats')
       .then(function (r) { return r.json(); })
       .then(applyData)
-      .catch(updateLiveDot);
+      .catch(updateLive);
   }
 
   // -------------------------------------------------------------------------
   // Boot
   // -------------------------------------------------------------------------
   initChart();
+  initTimeTabs();
+  loadHistory(activeHours);
   poll();
-  setInterval(poll, POLL_INTERVAL_MS);
-  setInterval(updateLiveDot, 5000);
+  setInterval(poll, POLL_MS);
+  setInterval(updateLive, 5000);
+  // Refresh history every minute so chart stays up to date without full reload
+  setInterval(function () { loadHistory(activeHours); }, 60000);
+
 }());
