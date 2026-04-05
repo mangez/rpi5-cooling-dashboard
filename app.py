@@ -1,8 +1,8 @@
 import os
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 
-from services.metrics import get_history, get_stats
+from services.metrics import get_history, get_history_csv, get_stats
 
 app = Flask(__name__)
 
@@ -28,12 +28,28 @@ def api_history():
     return jsonify(get_history(hours))
 
 
+@app.route("/api/export/csv")
+def api_export_csv():
+    """Download history as CSV. Query param: ?hours=1 (default 1, max 168)."""
+    try:
+        hours = min(int(request.args.get("hours", 1)), 168)
+    except (TypeError, ValueError):
+        hours = 1
+    csv_data = get_history_csv(hours)
+    filename = "rpi5_dashboard_history_{}h.csv".format(hours)
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename={}".format(filename)},
+    )
+
+
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"}), 200
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
+    port  = int(os.environ.get("PORT", 8080))
     debug = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
     app.run(host="0.0.0.0", port=port, debug=debug)
