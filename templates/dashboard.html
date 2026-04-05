@@ -1,140 +1,147 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Raspberry Pi 5 Cooling Dashboard</title>
+  <title>RPi 5 Dashboard</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <div class="container">
-    <h1><i class="fas fa-microchip"></i> Raspberry Pi 5 Cooling Dashboard</h1>
-
-    <div class="metrics-grid">
-      <!-- CPU Temp -->
-      <div class="metric-card metric-normal" id="tempCard">
-        <div class="metric-header">
-          <div class="metric-icon icon-temp"><i class="fas fa-thermometer-half"></i></div>
-          <div>
-            <div class="metric-title">CPU Temperature</div>
-            <div class="metric-subtitle">Live core temp &amp; throttling</div>
-          </div>
-        </div>
-        <div class="metric-main">
-          <div class="metric-value" style="color:#e74c3c" id="tempValue">--&deg;C</div>
-          <div class="metric-value-small" id="clockValue">Clock: -- MHz</div>
-          <span class="metric-status status-normal" id="throttleStatus">{{ throttle_status }}</span>
-          {% if not temp_available %}
-            <div class="sensor-unavailable"><i class="fas fa-exclamation-triangle"></i> Sensor unavailable</div>
-          {% endif %}
-        </div>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="topbar-left">
+        <i class="fas fa-microchip topbar-icon"></i>
+        <span class="topbar-title">Raspberry Pi 5 &mdash; System Monitor</span>
       </div>
-
-      <!-- Fan RPM -->
-      <div class="metric-card metric-normal" id="fanCard">
-        <div class="metric-header">
-          <div class="metric-icon icon-fan"><i class="fas fa-fan"></i></div>
-          <div>
-            <div class="metric-title">Fan Speed</div>
-            <div class="metric-subtitle">Active cooler RPM</div>
-          </div>
-        </div>
-        <div class="metric-main">
-          <div class="metric-value" style="color:#3498db" id="fanValue">-- RPM</div>
-          <span class="metric-status status-normal" id="fanStatus">{{ status_fan }}</span>
-          {% if not fan_available %}
-            <div class="sensor-unavailable"><i class="fas fa-exclamation-triangle"></i> Sensor unavailable</div>
-          {% endif %}
-        </div>
-      </div>
-
-      <!-- CPU Usage -->
-      <div class="metric-card metric-normal" id="cpuCard">
-        <div class="metric-header">
-          <div class="metric-icon icon-cpu"><i class="fas fa-gauge-high"></i></div>
-          <div>
-            <div class="metric-title">CPU Load</div>
-            <div class="metric-subtitle">Overall processor utilization</div>
-          </div>
-        </div>
-        <div class="metric-main">
-          <div class="metric-value" style="color:#9b59b6" id="cpuValue">--%</div>
-          <div class="progress-bar"><div class="progress-fill" id="cpuFill" style="background:#9b59b6"></div></div>
-        </div>
-      </div>
-
-      <!-- RAM Usage -->
-      <div class="metric-card metric-normal" id="ramCard">
-        <div class="metric-header">
-          <div class="metric-icon icon-ram"><i class="fas fa-memory"></i></div>
-          <div>
-            <div class="metric-title">RAM Usage</div>
-            <div class="metric-subtitle">System memory consumption</div>
-          </div>
-        </div>
-        <div class="metric-main">
-          <div class="metric-value" style="color:#f39c12" id="ramValue">--%</div>
-          <div class="progress-bar"><div class="progress-fill" id="ramFill" style="background:#f39c12"></div></div>
-        </div>
-      </div>
-
-      <!-- Disk Usage -->
-      <div class="metric-card metric-normal" id="diskCard">
-        <div class="metric-header">
-          <div class="metric-icon icon-disk"><i class="fas fa-hdd"></i></div>
-          <div>
-            <div class="metric-title">Storage Pulse</div>
-            <div class="metric-subtitle">Root filesystem usage</div>
-          </div>
-        </div>
-        <div class="metric-main">
-          <div class="metric-value" style="color:#27ae60" id="diskValue">--%</div>
-          <div class="metric-value-small" id="diskFree">Free: -- GB / -- GB</div>
-          <div class="progress-bar"><div class="progress-fill" id="diskFill" style="background:#27ae60"></div></div>
-        </div>
+      <div class="topbar-right">
+        <span class="live-badge" id="liveBadge">
+          <span class="live-dot" id="liveDot"></span> LIVE
+        </span>
+        <span class="topbar-ts" id="lastUpdate">{{ timestamp }}</span>
       </div>
     </div>
+  </header>
 
-    <div class="layout-main">
-      <div class="chart-container">
-        <div class="chart-header"><i class="fas fa-chart-line"></i> Performance History</div>
+  <main class="container">
+
+    <!-- Alert banner for throttle issues -->
+    {% if not throttle_healthy %}
+    <div class="alert-banner alert-crit">
+      <i class="fas fa-triangle-exclamation"></i>
+      <strong>Throttle alert:</strong> {{ throttle_status }}
+    </div>
+    {% endif %}
+
+    <!-- Metric cards -->
+    <section class="metrics-grid">
+
+      <!-- Temperature -->
+      <div class="metric-card" id="tempCard" data-status="{{ status_temp|lower }}">
+        <div class="card-header">
+          <span class="card-label">CPU Temp</span>
+          <span class="card-badge" id="throttleStatus">{{ throttle_status }}</span>
+        </div>
+        <div class="card-value" id="tempValue" style="color:var(--c-temp)">{{ temp }}&deg;C</div>
+        <div class="card-sub" id="clockValue">{{ clock_speed }} MHz</div>
+        {% if not temp_available %}
+        <div class="sensor-warn"><i class="fas fa-triangle-exclamation"></i> Sensor unavailable</div>
+        {% endif %}
+      </div>
+
+      <!-- Fan -->
+      <div class="metric-card" id="fanCard" data-status="{{ 'normal' if fan_available else 'warn' }}">
+        <div class="card-header">
+          <span class="card-label">Fan Speed</span>
+          <span class="card-badge" id="fanStatus">{{ status_fan }}</span>
+        </div>
+        <div class="card-value" id="fanValue" style="color:var(--c-fan)">{{ fan_rpm }} <small>RPM</small></div>
+        {% if not fan_available %}
+        <div class="sensor-warn"><i class="fas fa-triangle-exclamation"></i> Sensor unavailable</div>
+        {% endif %}
+      </div>
+
+      <!-- CPU Load -->
+      <div class="metric-card" id="cpuCard" data-status="{{ status_cpu|lower }}">
+        <div class="card-header">
+          <span class="card-label">CPU Load</span>
+          <span class="card-badge" id="cpuStatus">{{ status_cpu }}</span>
+        </div>
+        <div class="card-value" id="cpuValue" style="color:var(--c-cpu)">{{ cpu_usage }}%</div>
+        <div class="progress-bar"><div class="progress-fill" id="cpuFill"></div></div>
+      </div>
+
+      <!-- RAM -->
+      <div class="metric-card" id="ramCard" data-status="{{ status_ram|lower }}">
+        <div class="card-header">
+          <span class="card-label">RAM</span>
+          <span class="card-badge" id="ramStatus">{{ status_ram }}</span>
+        </div>
+        <div class="card-value" id="ramValue" style="color:var(--c-ram)">{{ ram_usage }}%</div>
+        <div class="progress-bar"><div class="progress-fill" id="ramFill"></div></div>
+      </div>
+
+      <!-- Disk -->
+      <div class="metric-card" id="diskCard" data-status="{{ status_disk|lower }}">
+        <div class="card-header">
+          <span class="card-label">Disk</span>
+          <span class="card-badge" id="diskStatus">{{ status_disk }}</span>
+        </div>
+        <div class="card-value" id="diskValue" style="color:var(--c-disk)">{{ disk_usage }}%</div>
+        <div class="card-sub" id="diskFree">{{ disk_free }} GB free / {{ disk_total }} GB</div>
+        <div class="progress-bar"><div class="progress-fill" id="diskFill"></div></div>
+      </div>
+
+    </section>
+
+    <!-- History chart + process table -->
+    <section class="layout-split">
+      <div class="panel chart-panel">
+        <div class="panel-header">
+          <span><i class="fas fa-chart-line"></i> Performance History</span>
+          <div class="time-tabs" id="timeTabs">
+            <button class="tab-btn active" data-hours="1">1h</button>
+            <button class="tab-btn" data-hours="6">6h</button>
+            <button class="tab-btn" data-hours="24">24h</button>
+            <button class="tab-btn" data-hours="168">7d</button>
+          </div>
+        </div>
         <div class="chart-wrapper">
           <canvas id="historyChart"></canvas>
         </div>
       </div>
 
-      <div class="procs-section">
-        <div class="chart-header"><i class="fas fa-bolt"></i> Top Processes</div>
+      <div class="panel procs-panel">
+        <div class="panel-header"><span><i class="fas fa-bolt"></i> Top Processes</span></div>
         <table id="procTable">
-          <thead><tr><th>Name</th><th style="text-align:right">CPU %</th></tr></thead>
+          <thead><tr><th>Name</th><th class="num">CPU %</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
-    </div>
+    </section>
 
-    <div class="readings-section">
-      <div class="chart-header"><i class="fas fa-list"></i> Recent Raw Readings</div>
-      <table id="readingsTable">
-        <thead>
-          <tr>
-            <th>Time</th><th>Temp (&deg;C)</th><th>Fan RPM</th><th>CPU Load</th><th>RAM Usage</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
+    <!-- Raw readings table -->
+    <section class="panel readings-panel">
+      <div class="panel-header"><span><i class="fas fa-table-list"></i> Recent Readings</span></div>
+      <div class="table-scroll">
+        <table id="readingsTable">
+          <thead>
+            <tr>
+              <th>Time</th><th class="num">Temp &deg;C</th><th class="num">Fan RPM</th>
+              <th class="num">CPU %</th><th class="num">RAM %</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
 
-    <div class="footer-info">
-      <span class="live-indicator">
-        <span class="live-dot" id="liveDot"></span>
-        <span>Auto-refreshing every 3s</span>
-      </span>
-      &nbsp;&bull;&nbsp; Last update: <span id="lastUpdate">{{ timestamp }}</span>
-    </div>
-  </div>
+  </main>
 
+  <script>
+    window.THRESHOLDS = {{ thresholds | tojson }};
+  </script>
   <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>
 </html>
