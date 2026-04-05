@@ -119,9 +119,9 @@ Here are some ideas if you’re looking for a starting point:
 - [x] Persistent SQLite history with auto-pruning
 - [x] Time-range tabs for history chart (1 h / 6 h / 24 h)
 - [x] `/health` liveness endpoint
-- [ ] Dark/light mode toggle
-- [ ] Support for multiple thermal zones
-- [ ] Export readings to CSV
+- x ] Dark/light mode toggle
+- x ] Support for multiple thermal zones
+- x ] Export readings to CSV
 - [ ] Telegram / webhook alert on Critical threshold breach
 - [ ] GPU temperature monitoring (for systems with a discrete GPU)
 
